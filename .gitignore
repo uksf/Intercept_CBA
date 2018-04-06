@@ -36,3 +36,4 @@ build
 vcproj64/
 
 \.vs/
+*.pbo
