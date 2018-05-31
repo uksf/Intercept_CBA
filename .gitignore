@@ -37,3 +37,5 @@ vcproj64/
 
 \.vs/
 *.pbo
+*.ilk
+*.pdb

@@ -13,7 +13,7 @@ import winreg
 
 ######## GLOBALS #########
 MAINDIR = "z"
-PROJECTDIR = "intercept"
+PROJECTDIR = "intercept_cba"
 ##########################
 
 def main():
