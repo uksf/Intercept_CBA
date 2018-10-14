@@ -12,6 +12,7 @@
 #include <link.h>
 #include <fstream>
 #else
+#include <windows.h>
 #include <Psapi.h>
 #pragma comment (lib, "Psapi.lib")//GetModuleInformation
 #pragma comment (lib, "version.lib") //GetFileVersionInfoSize
@@ -206,8 +207,20 @@ game_value arrayUnion(SQFPar left_arg, SQFPar right_arg) {
 
 game_value regexReplace(SQFPar left_arg, SQFPar right_arg) {
     if (right_arg.size() != 2) return "";
-    std::regex regr((std::string)right_arg[0]);
-    return std::regex_replace((std::string)left_arg, regr, (std::string)right_arg[1]);
+    r_string pattern = right_arg[0];
+    std::string searchString = left_arg;
+    std::string replaceString = right_arg[1];
+
+
+    std::regex regr(pattern.data(), pattern.size());
+    return std::regex_replace(searchString, regr, replaceString);
+}
+
+game_value regexMatch(SQFPar left_arg, SQFPar right_arg) {
+    r_string pattern = right_arg;
+    r_string searchString = left_arg;
+    std::regex regr(pattern.data(), pattern.size());
+    return std::regex_match(searchString.begin(), searchString.end(), regr, std::regex_constants::match_any);
 }
 
 game_value getObjectConfigFromObj(SQFPar obj) {
@@ -310,8 +323,7 @@ public:
     r_string vName;
     game_value val;
     bool exec(game_state& state, vm_context& t) override {
-        auto sv = client::host::functions.get_engine_allocator()->setvar_func;
-        sv(vName.c_str(), val);
+        state.eval->local->variables.insert({ vName, val });
         return false;
     }
     int stack_size(void* t) const override { return 0; };
@@ -475,6 +487,46 @@ game_value surfaceTexture(uintptr_t, SQFPar right) {
 #pragma optimize( "", on )
 #endif
 
+game_value binarySearch(uintptr_t, SQFPar left, SQFPar right) {
+    auto& arr = left.to_array();
+    if (right.type_enum() == game_data_type::CODE) {
+        auto it = std::lower_bound(arr.begin(), arr.end(), game_value(), [&right](const game_value& arg, const game_value&) {
+            return sqf::call(static_cast<code>(right), arg);
+        });
+        if (it == arr.end()) return {};
+        //If result is smaller than wanted value. Then it's not in the array at all and would be before the first element if sorted.
+        if (it == arr.begin() && static_cast<bool>(sqf::call(static_cast<code>(right), *it))) return {};
+        return *it;
+    } else if (right.type_enum() == game_data_type::STRING) {
+        auto it = std::lower_bound(arr.begin(), arr.end(), game_value(), [&right](const game_value& arg, const game_value&) {
+            return static_cast<const r_string&>(arg) < static_cast<const r_string&>(right);
+        });
+        if (it == arr.end()) return {};
+        if (it == arr.begin() && static_cast<const r_string&>(*it) != static_cast<const r_string&>(right)) return {};
+        return *it;
+    } else if (right.type_enum() == game_data_type::SCALAR) {
+        auto it = std::lower_bound(arr.begin(), arr.end(), game_value(), [&right](const game_value& arg, const game_value&) {
+            return static_cast<float>(arg) < static_cast<float>(right);
+        });
+        if (it == arr.end()) return {};
+        if (it == arr.begin() && static_cast<float>(*it) != static_cast<float>(right)) return {};
+        return *it;
+    }
+}
+
+game_value compare_spaceShip_string(uintptr_t, SQFPar left, SQFPar right) {
+    return strcmp(static_cast<const r_string&>(left).data(), static_cast<const r_string&>(right).data());
+}
+
+game_value compare_spaceShip_number(uintptr_t, SQFPar left, SQFPar right) {
+    if (static_cast<float>(left) < static_cast<float>(right)) return -1;
+    if (static_cast<float>(left) > static_cast<float>(right)) return 1;
+    return 0;
+}
+
+
+
+
 void Utility::preStart() {
 
     static auto _getNumberWithDef = host::register_sqf_command("getNumber", "", userFunctionWrapper<getNumberWithDef>, game_data_type::SCALAR, game_data_type::ARRAY);
@@ -493,6 +545,7 @@ void Utility::preStart() {
     static auto _startsWithCI = host::register_sqf_command("startsWithCI", "", userFunctionWrapper<stringStartsWith>, game_data_type::BOOL, game_data_type::STRING, game_data_type::STRING);
     static auto _arrayUnion = host::register_sqf_command("arrayUnion", "", userFunctionWrapper<arrayUnion>, game_data_type::ARRAY, game_data_type::ARRAY, game_data_type::ARRAY);
     static auto _regexReplace = host::register_sqf_command("regexReplace", "", userFunctionWrapper<regexReplace>, game_data_type::STRING, game_data_type::STRING, game_data_type::ARRAY);
+    static auto _regexMatch = host::register_sqf_command("regexMatch", "", userFunctionWrapper<regexMatch>, game_data_type::STRING, game_data_type::STRING, game_data_type::BOOL);
     static auto _getObjectConfigFromObj = host::register_sqf_command("getObjectConfig", "", userFunctionWrapper<getObjectConfigFromObj>, game_data_type::CONFIG, game_data_type::OBJECT);
     static auto _getObjectConfigFromStr = host::register_sqf_command("getObjectConfig", "", userFunctionWrapper<getObjectConfigFromStr>, game_data_type::CONFIG, game_data_type::STRING);
     static auto _getItemConfigFromObj = host::register_sqf_command("getItemConfig", "", userFunctionWrapper<getObjectConfigFromObj>, game_data_type::CONFIG, game_data_type::OBJECT);
@@ -731,7 +784,7 @@ void Utility::preStart() {
     }, game_data_type::STRING, game_data_type::ARRAY);
 
 
-    static auto _selectIf = host::register_sqf_command("numberArrayToHexString"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _selectIf = host::register_sqf_command("selectIf"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
         
 
         auto& arr = left.to_array();
@@ -764,6 +817,17 @@ void Utility::preStart() {
         return {};
     }, game_data_type::ANY, game_data_type::ARRAY, game_data_type::CODE);
 
+    static auto _spaceship_string = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
+        compare_spaceShip_string, game_data_type::SCALAR, game_data_type::STRING, game_data_type::STRING);
 
+    static auto _spaceship_number = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
+        compare_spaceShip_number, game_data_type::SCALAR, game_data_type::SCALAR, game_data_type::SCALAR);
+
+    static auto _binarySearch_code = host::register_sqf_command("binaryFind", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
+        binarySearch, game_data_type::ANY, game_data_type::ARRAY, game_data_type::CODE);
+    static auto _binarySearch_string = host::register_sqf_command("binaryFind", "Array needs to be presorted ascending order",
+        binarySearch, game_data_type::STRING, game_data_type::ARRAY, game_data_type::STRING);
+    static auto _binarySearch_number = host::register_sqf_command("binaryFind", "Array needs to be presorted ascending order",
+        binarySearch, game_data_type::SCALAR, game_data_type::ARRAY, game_data_type::SCALAR);
 
 }
