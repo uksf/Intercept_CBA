@@ -27,9 +27,9 @@ message("COMPILER USED: '${CMAKE_CXX_COMPILER_ID}'")
 set(CMAKE_CL_64 ${USE_64BIT_BUILD})
 
 if(USE_64BIT_BUILD)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/rv/intercept-cba")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/rv/intercept-cba/intercept")
 else()
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/rv/intercept-cba")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/rv/intercept-cba/intercept")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
