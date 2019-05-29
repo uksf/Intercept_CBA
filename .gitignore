@@ -39,3 +39,4 @@ vcproj64/
 *.pbo
 *.ilk
 *.pdb
+.vscode/
