@@ -12,7 +12,7 @@ class Intercept {
     class cba {
         class intercept_cba {
             pluginName = "intercept-cba";
-			certificate = "\u\uksf\addons\main\UKSFPK.cer";
+			//certificate = "\u\uksf\addons\main\UKSFPK.cer";
         };
     };
 };
