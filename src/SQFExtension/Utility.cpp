@@ -6,6 +6,7 @@
 #include <csignal>
 #include <regex>
 #include <sstream>
+#include <numeric>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -332,15 +333,14 @@ public:
 
 };
 
-game_value FastForEach(uintptr_t, SQFPar left, SQFPar right) {
+game_value FastForEach(game_state&, SQFPar left, SQFPar right) {
     auto& arr = left.to_array();
     auto bodyCode = static_cast<game_data_code*>(right.data.get());
 
 
     //Insert instruction to set _x
-    ref<GameInstructionSetLVar> curElInstruction = rv_allocator<GameInstructionSetLVar>::create_single();
+    ref<GameInstructionSetLVar> curElInstruction = new GameInstructionSetLVar();
     curElInstruction->vName = "_x";
-    auto oldInstructions = bodyCode->instructions;
 
     bodyCode->instructions.insert(bodyCode->instructions.begin(), curElInstruction);
 
@@ -349,7 +349,7 @@ game_value FastForEach(uintptr_t, SQFPar left, SQFPar right) {
         sqf::call(right);
     }
 
-    bodyCode->instructions = oldInstructions;
+    bodyCode->instructions.erase(bodyCode->instructions.begin());
 
     return {};
 }
@@ -357,6 +357,12 @@ game_value FastForEach(uintptr_t, SQFPar left, SQFPar right) {
 #ifndef __linux__
 
 #pragma optimize( "gts", off )
+
+
+#pragma warning( push )
+#pragma warning( disable : 4172) //returning temporary
+
+
 #ifdef _MSC_VER
 __declspec(noinline)
 #endif
@@ -366,6 +372,8 @@ uintptr_t surfaceTexture_callST(SQFPar right) {
     stackBuf[211] = 13;
     return reinterpret_cast<uintptr_t>(&stackBuf[511]);
 }
+
+#pragma warning( pop ) 
 
 uintptr_t surfaceTexture_TestOffs(void* armaBase,uintptr_t stackBase, uint32_t i, const char*& rawName) {
 
@@ -428,7 +436,7 @@ uintptr_t surfaceTexture_TestOffs(void* armaBase,uintptr_t stackBase, uint32_t i
 }
 
 
-game_value surfaceTexture(uintptr_t, SQFPar right) {
+game_value surfaceTexture(game_state&, SQFPar right) {
 
     //#ifdef _DEBUG
     //    //Doesn't work on Debug build because of /RTC and /GS which smaaaash the stack
@@ -483,7 +491,7 @@ game_value surfaceTexture(uintptr_t, SQFPar right) {
 #pragma optimize( "", on )
 #endif
 
-game_value binarySearch(uintptr_t, SQFPar left, SQFPar right) {
+game_value binarySearch(game_state&, SQFPar left, SQFPar right) {
     auto& arr = left.to_array();
     if (right.type_enum() == game_data_type::CODE) {
         auto it = std::lower_bound(arr.begin(), arr.end(), game_value(), [&right](const game_value& arg, const game_value&) {
@@ -510,11 +518,11 @@ game_value binarySearch(uintptr_t, SQFPar left, SQFPar right) {
     }
 }
 
-game_value compare_spaceShip_string(uintptr_t, SQFPar left, SQFPar right) {
+game_value compare_spaceShip_string(game_state&, SQFPar left, SQFPar right) {
     return strcmp(static_cast<const r_string&>(left).data(), static_cast<const r_string&>(right).data());
 }
 
-game_value compare_spaceShip_number(uintptr_t, SQFPar left, SQFPar right) {
+game_value compare_spaceShip_number(game_state&, SQFPar left, SQFPar right) {
     if (static_cast<float>(left) < static_cast<float>(right)) return -1;
     if (static_cast<float>(left) > static_cast<float>(right)) return 1;
     return 0;
@@ -552,19 +560,19 @@ void Utility::preStart() {
     static auto _hasItem = host::register_sqf_command("hasItem", "", userFunctionWrapper<hasItem>, game_data_type::BOOL, game_data_type::OBJECT, game_data_type::STRING);
     static auto _cmpBoolNumber = host::register_sqf_command("==", "", userFunctionWrapper<compareBoolNumber>, game_data_type::BOOL, game_data_type::BOOL, game_data_type::SCALAR);
     static auto _cmpNumberBool = host::register_sqf_command("==", "", userFunctionWrapper<compareNumberBool>, game_data_type::BOOL, game_data_type::SCALAR, game_data_type::BOOL);
-    static auto _andNumberBool = host::register_sqf_command("&&", "", [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _andNumberBool = host::register_sqf_command("&&", "", [](game_state&, SQFPar left, SQFPar right) -> game_value {
         return static_cast<bool>(right) && static_cast<float>(left) != 0.f;
     }, game_data_type::BOOL, game_data_type::SCALAR, game_data_type::BOOL);
 
-    static auto _andBoolNumber = host::register_sqf_command("&&", "", [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _andBoolNumber = host::register_sqf_command("&&", "", [](game_state&, SQFPar left, SQFPar right) -> game_value {
         return static_cast<bool>(left) && static_cast<float>(right) != 0.f;
     }, game_data_type::BOOL, game_data_type::BOOL, game_data_type::SCALAR);
 
-    static auto _andNumberNumber = host::register_sqf_command("&&", "", [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _andNumberNumber = host::register_sqf_command("&&", "", [](game_state&, SQFPar left, SQFPar right) -> game_value {
         return static_cast<float>(left) != 0.f && static_cast<float>(right) != 0.f;
     }, game_data_type::BOOL, game_data_type::SCALAR, game_data_type::SCALAR);
 
-    static auto _currentUnit = host::register_sqf_command("currentUnit"sv, "Returns the current Unit (CBA_fnc_currentUnit)"sv, [](uintptr_t) -> game_value {
+    static auto _currentUnit = host::register_sqf_command("currentUnit"sv, "Returns the current Unit (CBA_fnc_currentUnit)"sv, [](game_state&) -> game_value {
         auto obj = sqf::get_variable(sqf::mission_namespace(), "");
         if (obj.is_null()) return sqf::player();
         return obj;
@@ -572,7 +580,7 @@ void Utility::preStart() {
 
     static auto _FastForEach = host::register_sqf_command(u8"FastForEach"sv, "", FastForEach, game_data_type::NOTHING, game_data_type::ARRAY, game_data_type::CODE);
 
-    static auto _textNull = host::register_sqf_command("textNull"sv, "test \"\""sv, [](uintptr_t) -> game_value {
+    static auto _textNull = host::register_sqf_command("textNull"sv, "test \"\""sv, [](game_state&) -> game_value {
         return sqf::text("");
     }, game_data_type::TEXT);
 
@@ -581,13 +589,13 @@ void Utility::preStart() {
     REGISTER_CAPABILITY(surfaceTexture);
     #endif
 
-    static auto _boolThenCode = host::register_sqf_command("then"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _boolThenCode = host::register_sqf_command("then"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         if (static_cast<bool>(left))
             return sqf::call(right);
         return {}; //Ret Nil
     }, game_data_type::ANY, game_data_type::BOOL, game_data_type::CODE);
 
-    static auto _boolThenArray = host::register_sqf_command("then"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _boolThenArray = host::register_sqf_command("then"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         if (static_cast<bool>(left))
             return sqf::call(right[0]);
         if (right.size() >= 2)
@@ -601,7 +609,7 @@ void Utility::preStart() {
     auto elseIfType = host::register_sqf_type("elseIfType"sv, "elseIfType"sv, "Dis is a elseif type. It elses ifs."sv, "elseIfType"sv, createGameDataElseIf);
     GameDataElseIf_type = elseIfType.second;
 
-    static auto _boolThenElseIf = host::register_sqf_command("then"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _boolThenElseIf = host::register_sqf_command("then"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         bool triggerFirst = static_cast<bool>(left);
         auto elseIfT = static_cast<GameDataElseIf*>(right.data.get());
 
@@ -619,7 +627,7 @@ void Utility::preStart() {
     }, game_data_type::ANY, game_data_type::BOOL, elseIfType.first);
     //#TODO suppport for ifType
 
-    static auto _elseIfCodeBool = host::register_sqf_command("elif"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfCodeBool = host::register_sqf_command("elif"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = new GameDataElseIf;
         elseIfT->baseCode = left;
 
@@ -629,7 +637,7 @@ void Utility::preStart() {
     }, elseIfType.first, game_data_type::CODE, game_data_type::BOOL);
 
 
-    static auto _elseIfElseIfBool = host::register_sqf_command("elif"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfElseIfBool = host::register_sqf_command("elif"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = static_cast<GameDataElseIf*>(left.data.get());
 
         elseIfT->statements.emplace_back(GameDataElseIf::statement{ static_cast<bool>(right), {} });
@@ -637,7 +645,7 @@ void Utility::preStart() {
         return left;
     }, elseIfType.first, elseIfType.first, game_data_type::BOOL);
 
-    static auto _elseIfCodeCode = host::register_sqf_command("elif"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfCodeCode = host::register_sqf_command("elif"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = new GameDataElseIf;
         elseIfT->baseCode = left;
 
@@ -646,7 +654,7 @@ void Utility::preStart() {
         return game_value(elseIfT);
     }, elseIfType.first, game_data_type::CODE, game_data_type::CODE);
 
-    static auto _elseIfElseIfCode = host::register_sqf_command("elif"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfElseIfCode = host::register_sqf_command("elif"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = static_cast<GameDataElseIf*>(left.data.get());
 
         elseIfT->statements.emplace_back(GameDataElseIf::statement{ right,{} });
@@ -654,7 +662,7 @@ void Utility::preStart() {
         return left;
     }, elseIfType.first, elseIfType.first, game_data_type::CODE);
 
-    static auto _elseIfThenCode = host::register_sqf_command("then"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfThenCode = host::register_sqf_command("then"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = static_cast<GameDataElseIf*>(left.data.get());
 
         //the previous elseif planted the statement condition already
@@ -664,7 +672,7 @@ void Utility::preStart() {
     }, elseIfType.first, elseIfType.first, game_data_type::CODE);
 
 
-    static auto _elseIfElse = host::register_sqf_command("else"sv, "description"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _elseIfElse = host::register_sqf_command("else"sv, "description"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         auto elseIfT = static_cast<GameDataElseIf*>(left.data.get());
         elseIfT->statements.emplace_back(GameDataElseIf::statement{ true,right });
         return left;
@@ -729,7 +737,7 @@ void Utility::preStart() {
 
     static auto found = findInMemoryPattern(pat,mask);
 
-    static auto _ragdoll = host::register_sqf_command("ragdollUnit"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _ragdoll = host::register_sqf_command("ragdollUnit"sv, ""sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         #ifdef __linux__
             typedef void*(*doRagdoll) (void* man, const vector3& velocity);
         #else
@@ -744,7 +752,7 @@ void Utility::preStart() {
 
 
 
-    static auto _sortCondition = host::register_sqf_command("sort"sv, "right parameter is _this[0]<_this[1] condition"sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _sortCondition = host::register_sqf_command("sort"sv, "right parameter is _this[0]<_this[1] condition"sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
 
         std::sort(left.to_array().begin(), left.to_array().end(), [&right](const game_value& l, const game_value& r) {
             auto ret = sqf::call(right,{l,r});
@@ -756,14 +764,14 @@ void Utility::preStart() {
     }, game_data_type::NOTHING, game_data_type::ARRAY, game_data_type::CODE);
 
 
-    static auto _strLessThan = host::register_sqf_command("<"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _strLessThan = host::register_sqf_command("<"sv, ""sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         r_string lStr = left;
         r_string rStr = right;
 
         return lStr < rStr;
     }, game_data_type::BOOL, game_data_type::STRING, game_data_type::STRING);
 
-    static auto _strBiggerThan = host::register_sqf_command(">"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _strBiggerThan = host::register_sqf_command(">"sv, ""sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         r_string lStr = left;
         r_string rStr = right;
 
@@ -771,7 +779,7 @@ void Utility::preStart() {
     }, game_data_type::BOOL, game_data_type::STRING, game_data_type::STRING);
 
 
-    static auto _numberArrayToHex = host::register_sqf_command("numberArrayToHexString"sv, ""sv, [](uintptr_t, SQFPar right) -> game_value {
+    static auto _numberArrayToHex = host::register_sqf_command("numberArrayToHexString"sv, ""sv, [](game_state&, SQFPar right) -> game_value {
         std::stringstream stream;
         for (auto& it : right.to_array())
             stream << std::hex << static_cast<int>(it);
@@ -780,7 +788,7 @@ void Utility::preStart() {
     }, game_data_type::STRING, game_data_type::ARRAY);
 
 
-    static auto _selectIf = host::register_sqf_command("selectIf"sv, ""sv, [](uintptr_t, SQFPar left, SQFPar right) -> game_value {
+    static auto _selectIf = host::register_sqf_command("selectIf"sv, ""sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
         
 
         auto& arr = left.to_array();
@@ -809,11 +817,11 @@ void Utility::preStart() {
         return {};
     }, game_data_type::ANY, game_data_type::ARRAY, game_data_type::CODE);
 
-    static auto _spaceship_string = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
-        compare_spaceShip_string, game_data_type::SCALAR, game_data_type::STRING, game_data_type::STRING);
-
-    static auto _spaceship_number = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
-        compare_spaceShip_number, game_data_type::SCALAR, game_data_type::SCALAR, game_data_type::SCALAR);
+    //static auto _spaceship_string = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
+    //    compare_spaceShip_string, game_data_type::SCALAR, game_data_type::STRING, game_data_type::STRING);
+    //
+    //static auto _spaceship_number = host::register_sqf_command("<=>", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
+    //    compare_spaceShip_number, game_data_type::SCALAR, game_data_type::SCALAR, game_data_type::SCALAR);
 
     static auto _binarySearch_code = host::register_sqf_command("binaryFind", "Compares values. If left<right returns -1. If left>right returns 1. Else returns 0.",
         binarySearch, game_data_type::ANY, game_data_type::ARRAY, game_data_type::CODE);
@@ -821,5 +829,83 @@ void Utility::preStart() {
         binarySearch, game_data_type::STRING, game_data_type::ARRAY, game_data_type::STRING);
     static auto _binarySearch_number = host::register_sqf_command("binaryFind", "Array needs to be presorted ascending order",
         binarySearch, game_data_type::SCALAR, game_data_type::ARRAY, game_data_type::SCALAR);
+
+
+
+
+
+
+
+    static auto _stringReplac = host::register_sqf_command("replace"sv, ""sv, [](game_state&, SQFPar left, SQFPar right) -> game_value {
+
+        r_string haystack = left;
+        auto& arguments = right.to_array();
+        std::vector<std::pair<r_string, r_string>> stringsToReplace;
+
+
+        if (arguments[0].type_enum() == game_data_type::ARRAY) {
+            for (auto& it : arguments) {
+                if (it.size() != 2) continue;
+                auto& needle = it.to_array()[0];
+                auto& replace = it.to_array()[1];
+
+                stringsToReplace.emplace_back(needle, replace);
+            }
+        } else {
+            if (arguments.size() != 2) return {};
+            auto& needle = arguments[0];
+            auto& replace = arguments[1];
+
+            stringsToReplace.emplace_back(needle, replace);
+        }
+
+        struct replacement {
+            size_t offsetFromStart;
+            r_string source;
+            r_string target;
+
+            [[nodiscard]] int getLengthChange() const {
+                return target.length() - source.length();
+            }
+        };
+
+        std::vector<replacement> replacements;
+
+        for (auto& it : stringsToReplace) {
+            size_t offset = 0;
+            while (true) {
+                auto found = haystack.find(it.first, offset);
+                offset = found + 1;
+                if (found == -1) break;
+                replacements.emplace_back(replacement{ found, it.first, it.second });
+            }
+        }
+
+        std::sort(replacements.begin(), replacements.end(), [](const replacement& l, replacement& r) {
+            return l.offsetFromStart < r.offsetFromStart;
+        });
+
+
+        size_t targetLength = haystack.length() + std::transform_reduce(replacements.begin(), replacements.end(), 0, std::plus<int>(), [](const replacement& r) {
+                return r.getLengthChange();
+        });
+
+        std::string output;
+        output.reserve(targetLength);
+
+
+        size_t curInputPos = 0;
+        size_t addOffs = 0;
+        for (auto& it : replacements) {
+            output.append(haystack.substr(curInputPos, it.offsetFromStart - curInputPos));
+            curInputPos += it.offsetFromStart - curInputPos + it.source.length();
+            output.append(it.target);
+        }
+        output.append(haystack.substr(curInputPos, haystack.length()-curInputPos));
+
+        return output;
+        }, game_data_type::STRING, game_data_type::STRING, game_data_type::ARRAY);
+
+
 
 }

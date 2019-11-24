@@ -6,7 +6,7 @@ find_package (Threads)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules)
 include(${PROJECT_SOURCE_DIR}/CMakeModules/cxx_compiler_functions.cmake)
 
-option(USE_64BIT_BUILD "USE_64BIT_BUILD" OFF)
+set(USE_64BIT_BUILD ${CMAKE_CL_64})
 option(USE_STATIC_LINKING "USE_STATIC_LINKING" ON)
 
 if(USE_STATIC_LINKING)
@@ -15,10 +15,6 @@ if(USE_STATIC_LINKING)
 else()
     message("WARNING: Linking dynamically")
     set(INTERCEPT_LINK_TYPE "dynamic")
-endif()
-
-if("${CMAKE_SIZEOF_VOID_P}" STREQUAL "8")
-    set(USE_64BIT_BUILD ON)
 endif()
 
 message("GENERATOR USED: '${CMAKE_GENERATOR}'")
