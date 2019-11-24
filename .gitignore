@@ -36,3 +36,5 @@ build
 vcproj64/
 
 \.vs/
+.vscode/
+rv/
